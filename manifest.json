@@ -1,0 +1,16 @@
+{
+  "domain": "expchegg",
+  "name": "expchegg",
+  "codeowners": [
+    "@catvaku"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://www.home-assistant.io/integrations/expchegg",
+  "homekit": {},
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "ssdp": [],
+  "zeroconf": [],
+  "version": "0.0.1"
+}

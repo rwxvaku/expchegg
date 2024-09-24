@@ -18,6 +18,8 @@ from .const import QUERY_NEXT_QC_DATA
 from .const import QUERY_USER_INFO
 from .const import QUERY_USER_INFO_DATA
 from .const import GRAPHQL_URL
+from .const import QUERY_NEXT_QA
+from .const import QUERY_NEXT_QA_DATA
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,9 +49,13 @@ class Hub:
 
   @property
   def QC(self):
-    """get qc class."""
+    """Get qc class."""
     return self._chegg.QC
 
+  @property
+  def QA(self):
+    """Get qa class."""
+    return self._chegg.QA
 
   async def http_req(self, url, method, headers = {}, **kwargs):
     """Http request to xenserver."""
@@ -76,7 +82,7 @@ class Hub:
         elif method == "GET":
           r = await client.get(f"{url}", timeout=30.0, headers=myHeaders)
       return r
-    except(e):
+    except():
       return False
 
 
@@ -141,6 +147,164 @@ class Hub:
     return False
 
 
+
+
+class QA:
+  """Question Answer Class."""
+
+  def __init__(self, hub, chegg):
+    """Init."""
+    self._name = "Chegg QA"
+    self._hub = hub
+    self._status = 'NA'
+    self._chegg = chegg
+    self._callbacks = set()
+    self._currentQC = ''
+    self._stats = {
+      'qa_authored': -1,
+      'cf_score': -1.0,
+      'qc_score': -1.0,
+    }
+
+  @property
+  def id(self):
+    return f"{self._chegg.id}_qa"
+  
+  @property
+  def name(self):
+    return self._name
+
+  @property
+  def status(self):
+    """Get Status."""
+    return self._status
+
+  @property
+  def stats(self):
+    """Get Stats."""
+    return self._stats
+
+  # need changes
+  async def set_stats(self, stats):
+    """Set QA Stats."""
+    self._stats['qc_reviewed'] = stats['data']['myReviewedQcStats']['noOfQcReviewed']
+    self._stats['accracy_score'] = stats['data']['myQcScoreStats']['qcAccuracyScore']
+
+  async def set_status(self, status):
+    """Set Status."""
+    self._status = status
+    await self.publish_update()
+
+  
+
+  async def handle_res_error(self, errors):
+    """Handle Res error."""
+    error_type = errors[0]['extensions']['errorType']
+
+    if error_type == 'NOT_FOUND' or error_type == 'NO_QUESTION_ASSIGNED':
+      return {
+        'error': True,
+        'retry': False
+      }
+    
+    return {
+      'error': True,
+      'login': True,
+      'retry': True
+    }
+
+  async def parse_inc_qa_data(self, data):
+    """Parse Incomming QA data."""
+    res = {
+      'available': 'NA',
+      'error': {
+        'error': True
+      }
+    }
+
+    if 'errors' in data:
+      res['error'] = await self.handle_res_error(data['errors'])
+      if res['error']['retry']:
+        return res
+    else:
+      res['error'] = {'error': False}
+
+    
+    if not res['error']['error']:
+      res['data'] = data['data']['nextQuestionAnsweringAssignment']
+      res['available'] = 'A'
+
+
+    return res
+
+  async def make_graphql_req(self, data):
+    """Make GraphQL Request."""
+    r = await self._hub.graphql(GRAPHQL_URL, self._hub._cookies, data)
+    if not r:
+      return False
+
+    _LOGGER.info(r.text)
+    _LOGGER.info(r.status_code)
+
+    if r.status_code == 200:
+      res = await self.parse_inc_qa_data(r.json())
+      self._currentQC = res
+      _LOGGER.info(json.dumps(res))
+      
+      if 'login' in res['error']:
+        await self._hub.login()
+        asyncio.sleep(5)
+        return await self.make_graphql_req(data)
+
+      return res
+
+    return {'error': {'error': True}, 'available': 'NA'}
+
+  async def check_qa_stats(self):
+    """Check QA Stats."""
+
+
+
+  async def check(self):
+    """Check Availiblity,"""
+    # _LOGGER.info('Checking...')
+    
+    # await self.set_stats('')
+    await self.set_status('...')
+    res = await self.make_graphql_req(QUERY_NEXT_QA_DATA)
+
+    # _LOGGER.info(json.dumps(res))
+    
+    # _LOGGER.info('RES DONE...')
+    
+    if not res:
+      return False
+
+    if res['available'] == 'A':
+      await self.set_status('A')
+    else:
+      await self.set_status('NA')
+
+    # _LOGGER.info('ALL DONE...')
+
+    return True
+
+  async def publish_update(self):
+    """Publish Update."""
+    # _LOGGER.info('Updating...')
+    for cb in self._callbacks:
+      cb()
+    
+  async def register_callback(self, callback):
+    """Add callback to update sensors."""
+    _LOGGER.info('Adding in CB...')
+    self._callbacks.add(callback)
+
+  def remove_callback(self, callback):
+    """Remove callback."""
+    _LOGGER.info('Remove from CB...')
+    self._callback.discard(callback)
+
 class QC:
   """Quality Check Class."""
 
@@ -152,6 +316,10 @@ class QC:
     self._chegg = chegg
     self._callbacks = set()
     self._currentQC = ''
+    self._stats = {
+      'qc_reviewed': -1,
+      'accracy_score': -1.0
+    }
 
   @property
   def id(self):
@@ -166,13 +334,22 @@ class QC:
     """Get Status."""
     return self._status
 
+  @property
+  def stats(self):
+    """Get Stats."""
+    return self._stats
+
+  async def set_stats(self, stats):
+    """Set QC Stats."""
+    self._stats['qc_reviewed'] = stats['data']['myReviewedQcStats']['noOfQcReviewed']
+    self._stats['accracy_score'] = stats['data']['myQcScoreStats']['qcAccuracyScore']
 
   async def set_status(self, status):
     """Set Status."""
     self._status = status
     await self.publish_update()
 
-
+  
 
   async def handle_res_error(self, errors):
     """Handle Res error."""
@@ -237,12 +414,16 @@ class QC:
 
     return {'error': {'error': True}, 'available': 'NA'}
 
+  async def check_qc_stats(self):
+    """Check QC Stats."""
+
 
 
   async def check(self):
     """Check Availiblity,"""
     # _LOGGER.info('Checking...')
     
+    # await self.set_stats('')
     await self.set_status('...')
     res = await self.make_graphql_req(QUERY_NEXT_QC_DATA)
 
@@ -286,7 +467,8 @@ class Chegg:
     self._hass = hass
     self._hub = hub
     self.branch = {
-      'QC': QC(hub, self)
+      'QC': QC(hub, self),
+      'QA': QA(hub, self)
     }
     self._id = f"{hub.hub_id}"
     self._status = {
@@ -304,6 +486,11 @@ class Chegg:
   def QC(self):
     """Quality Check."""
     return self.branch['QC']
+
+  @property
+  def QA(self):
+    """Question Answer."""
+    return self.branch['QA']
 
   @property
   def Q(self):

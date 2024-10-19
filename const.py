@@ -2,7 +2,8 @@
 
 DOMAIN = "expchegg"
 
-GRAPHQL_URL = "https://gateway.chegg.com/nestor-graph/graphql"
+# GRAPHQL_URL = "https://gateway.chegg.com/nestor-graph/graphql"
+GRAPHQL_URL = "https://expert-gateway.chegg.com/nestor-graph/graphql"
 
 QUERY_NEXT_QC = """query GetNextQcAssignmentWithRetry {
   nextQcAssignmentWithRetry {

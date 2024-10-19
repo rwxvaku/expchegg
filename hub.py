@@ -78,9 +78,9 @@ class Hub:
     try:
       async with httpx.AsyncClient() as client:
         if method == "POST":
-          r = await client.post(f"{url}", json=kwargs.get('data', {}), timeout=30.0, headers=myHeaders, cookies=kwargs.get('cookies', httpx.Cookies()) )
+          r = await client.post(f"{url}", json=kwargs.get('data', {}), timeout=30.0, headers=myHeaders, cookies=kwargs.get('cookies', self._cookies), follow_redirects=kwargs.get('red', True))
         elif method == "GET":
-          r = await client.get(f"{url}", timeout=30.0, headers=myHeaders)
+          r = await client.get(f"{url}", timeout=30.0, headers=myHeaders, cookies=kwargs.get('cookies', self._cookies), follow_redirects=kwargs.get('red', True))
       return r
     except():
       return False
@@ -112,22 +112,71 @@ class Hub:
 
   async def authenticate(self, email, password):
     """Auth."""
-    url = 'https://expert.chegg.com/api/auth/login'
+    firstUrl = 'https://expert.chegg.com/api/auth/login'
+    r = await self.http_req(firstUrl, 'GET')
+    cookies = r.cookies
+    for h in r.history:
+      self._cookies.update(h.cookies) 
+    # self._cookies = r.history[len(r.history)-1].cookies
+    newLoginUrl = str(r.url)
+    # print(newLoginUrl)
+    # print(str(newLoginUrl))
+    # return
+    # url = 'https://expert.chegg.com/api/auth/login'
+    url = newLoginUrl
     self._email = email
     self._pass = password
-    r = await self.http_req(url, 'POST', data={'email': email, 'password': password})
+    r = await self.http_req(url, 'POST', data={'state': url.split('=')[1],'username': email, 'password': password, 'action': 'default'}, red=False)
+    loginCookies = r.cookies
+    self._cookies.update(r.cookies)
 
+    # print( r.status_code, r.url, r.cookies, r.text)
+    # print(r.headers['location'])
+    resumeUrl = r.url.scheme + '://' + r.url.host + r.headers['location']
+    # print(resumeUrl)
+    # print('----------------------')
+
+    r = await self.http_req(resumeUrl, 'GET', red=False)
+    self._cookies.update(r.cookies)
+
+
+    # print( r.status_code, r.url, r.cookies, r.text)
+    # print(r.headers['location'])
+    cbUrl = r.headers['location']
+    # print(resumeUrl)
+    # print('----------------------')
+    
+    r = await self.http_req(cbUrl, 'GET', red=False)
+    self._cookies.update(r.cookies)
+
+
+    # print( r.status_code, r.url, r.cookies, r.text)
+    # print(r.headers['location'])
+    # resumeUrl = r.headers['location']
+    # print(resumeUrl)
+    # print('----------------------')
+    
+    
+    # for t in r.history:
+    #   print(t.status_code, t.url, t.cookies, t.text)
+    #   print("-------------------")
+    
     if not r:
       return False
     
     # _LOGGER.info(r.cookies)
 
-    if r.status_code != 200:
-      return False
+    # if r.status_code != 200:
+      # return False
       
-    self._cookies = r.cookies
+    # self._cookies = r.cookies
 
     ta = await self.testAuth()
+    if not ta:
+      _LOGGER.info('FAIL')
+    else:
+      _LOGGER.info('PASS')
+    # print(ta)
     # _LOGGER.info(ta)
     
     return ta
